@@ -2,5 +2,4 @@ streamlit
 pandas
 openai
 pymupdf
-xlsxwriter
-plotly
+stripe
