@@ -9,213 +9,116 @@ from concurrent.futures import ThreadPoolExecutor
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="ZYNTH Enterprise IA", page_icon="💎", layout="wide")
 
-# --- CSS ESTILO ZYNTH NEÓN v5.1 ---
+# --- CSS ESTILO ZYNTH NEÓN v5.2 ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Roboto:wght@300;400&display=swap');
-    
     .main { background-color: #050505; color: #00FF00; font-family: 'Roboto', sans-serif; }
-    
     h1 { font-family: 'Orbitron', sans-serif; color: #00FF00 !important; text-shadow: 0 0 20px #00FF00; text-align: center; font-size: 50px; margin-bottom: 0px;}
     h3 { font-family: 'Roboto', sans-serif; color: #888 !important; text-align: center; font-weight: 300; letter-spacing: 2px; margin-top: 0px; margin-bottom: 30px;}
-    h4 { color: #00FF00 !important; font-family: 'Orbitron', sans-serif; letter-spacing: 2px; border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 20px;}
-
-    /* Botón Neón */
     .stButton>button { 
         background: linear-gradient(45deg, #00FF00, #00CC00); color: black; border-radius: 5px; 
         font-family: 'Orbitron', sans-serif; font-weight: bold; width: 100%; border: none; padding: 12px;
         transition: 0.3s; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 0 10px rgba(0,255,0,0.5);
     }
-    .stButton>button:hover { background: linear-gradient(45deg, #00CC00, #00FF00); transform: scale(1.03); box-shadow: 0 0 20px #00FF00; }
-
-    /* Inputs y Áreas de Texto */
-    .stTextInput>div>div>input, .stTextArea>div>div>textarea { 
-        background-color: #101010; color: #00FF00; border: 1px solid #333; font-family: 'Roboto', sans-serif; border-radius: 5px;
-    }
-    .stTextInput>div>div>input:focus, .stTextArea>div>div>textarea:focus { border: 1px solid #00FF00; box-shadow: 0 0 10px rgba(0,255,0,0.3); }
-
-    /* Drag & Drop */
-    .stFileUploader>div>div>button { background-color: #151515; color: #888; border: 1px dashed #333; }
-    .stFileUploader>div>div>button:hover { border: 1px dashed #00FF00; color: #00FF00; }
-
-    /* Dataframe y Tabla */
-    .stDataFrame { background-color: #101010; border: 1px solid #333; border-radius: 5px; }
-    
-    /* Ocultar barra de Streamlit */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    .stTextInput>div>div>input, .stTextArea>div>div>textarea { background-color: #101010; color: #00FF00; border: 1px solid #333; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- SISTEMA DE CONTRASEÑA (RESTAURADO) ---
+# --- SEGURIDAD ---
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
     col1, col2, col3 = st.columns([1,1.5,1])
     with col2:
-        st.markdown("<h4 style='text-align:center;'>INSTALANDO CONEXIÓN SEGURA...</h4>", unsafe_allow_html=True)
-        password = st.text_input("INGRESE ACCESS KEY (ENCRIPTADO):", type="password")
+        st.markdown("<h4 style='color:#00FF00; text-align:center; font-family:Orbitron;'>ZYNTH ACCESS CONTROL</h4>", unsafe_allow_html=True)
+        password = st.text_input("PASSWORD:", type="password")
         if password == "ZYNTH2026":
             st.session_state.autenticado = True
             st.rerun()
-        elif password:
-            st.error("KEY INCORRECTA. ACCESO DENEGADO.")
         st.stop()
 
-# --- HEADER DE MARCA ---
 st.markdown("<h1>ZYNTH ENTERPRISE</h1>", unsafe_allow_html=True)
-st.markdown("<h3>ULTRA-FAST TALENT SCANNER // AI EDITION v5.1</h3>", unsafe_allow_html=True)
-
-# --- CONFIGURACIÓN DE IA (VERIFICACIÓN DE LLAVE) ---
-if "OPENAI_API_KEY" not in st.secrets:
-    st.error("❌ ERROR CRÍTICO: No se encontró la 'OPENAI_API_KEY' en los Secrets de Streamlit.")
-    st.stop()
+st.markdown("<h3>NEXUS TALENT SCANNER // CONTACT EDITION</h3>", unsafe_allow_html=True)
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-def extract_text_from_pdf(pdf_file):
+def analyze_cv(file, user_requirements):
     try:
-        doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
-        text = "".join([page.get_text() for page in doc])
-        return text[:10000] # Límite de texto para no saturar
-    except:
-        return ""
-
-def analyze_cv(text, user_requirements):
-    if not text: return "Error: No se pudo leer el PDF."
-    
-    prompt = f"""
-    Eres el motor de IA de ZYNTH Enterprise. Analiza este CV de forma extremadamente rigurosa basándote en estos REQUISITOS DEL CLIENTE: "{user_requirements}".
-    Extrae la información y asigna un puntaje del 0 al 100.
-    
-    RESPONDE EXCLUSIVAMENTE EN ESTE FORMATO:
-    Nombre: [Nombre Completo] | Puntaje: [0-100] | Veredicto: [CONTRATAR TOTALMENTE / ENTREVISTAR / RECHAZAR] | Motivo: [Explicación técnica y detallada] | Email: [Correo electrónico]
-    
-    CV TEXTO:
-    {text}
-    """
-    
-    try:
+        doc = fitz.open(stream=file.read(), filetype="pdf")
+        text = "".join([page.get_text() for page in doc])[:8000]
+        
+        prompt = f"""
+        Analiza este CV basándote en: "{user_requirements}".
+        Extrae datos de contacto exactos. Si no encuentras alguno, pon 'No disponible'.
+        
+        FORMATO DE RESPUESTA (ESTRICTO):
+        Nombre: [N] | Teléfono: [T] | Email: [E] | Puntaje: [0-100] | Veredicto: [V] | Motivo: [M]
+        
+        CV:
+        {text}
+        """
+        
         response = client.chat.completions.create(
-            model="gpt-4o-mini", # El más rápido y eficiente para volumen
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0
         )
-        return response.choices[0].message.content
-    except:
-        return "Error en la conexión con la IA."
+        r = response.choices[0].message.content.split(" | ")
+        return {
+            "NOMBRE": r[0].split(": ")[1],
+            "TELEFONO": r[1].split(": ")[1],
+            "EMAIL": r[2].split(": ")[1],
+            "PUNTAJE": int(''.join(filter(str.isdigit, r[3]))),
+            "VEREDICTO": r[4].split(": ")[1],
+            "MOTIVO": r[5].split(": ")[1]
+        }
+    except: return None
 
-# --- PANEL DE CONTROL ---
-col_config, col_display = st.columns([1, 2.2])
+# --- UI ---
+col_in, col_out = st.columns([1, 2.2])
 
-with col_config:
-    st.markdown("#### ⚙️ CONFIGURACIÓN")
-    reqs = st.text_area("¿Qué perfil buscas hoy?", placeholder="Ej: Desarrollador Python Senior...", height=150)
-    uploaded_files = st.file_uploader("CARGAR CVS (PDF)", accept_multiple_files=True, type=['pdf'])
-    analizar_btn = st.button("🚀 INICIAR ESCANEO ZYNTH")
+with col_in:
+    perfil = st.text_area("Requisitos:", placeholder="Ej: Ingeniero con experiencia en Python...")
+    archivos = st.file_uploader("Subir CVs", accept_multiple_files=True, type=['pdf'])
+    analizar_btn = st.button("🚀 INICIAR ESCANEO")
 
-with col_display:
-    if uploaded_files and reqs and analizar_btn:
-        results = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+with col_out:
+    if archivos and perfil and analizar_btn:
+        resultados = []
+        barra = st.progress(0)
         
-        # MAGIA: Multithreading para procesar 10 CVs a la vez
         with ThreadPoolExecutor(max_workers=10) as executor:
-            futuros = [executor.submit(analyze_cv, extract_text_from_pdf(f), reqs) for f in uploaded_files]
-            
+            futuros = [executor.submit(analyze_cv, f, perfil) for f in archivos]
             for i, f in enumerate(futuros):
-                status_text.text(f"Procesando: {uploaded_files[i].name}...")
-                analysis = f.result()
-                
-                try:
-                    parts = analysis.split(" | ")
-                    nombre = parts[0].split(": ")[1]
-                    puntaje = int(''.join(filter(str.isdigit, parts[1].split(": ")[1])))
-                    
-                    results.append({
-                        "NOMBRE": nombre,
-                        "PUNTAJE": puntaje,
-                        "VEREDICTO": parts[2].split(": ")[1],
-                        "MOTIVO": parts[3].split(": ")[1],
-                        "EMAIL": parts[4].split(": ")[1]
-                    })
-                except:
-                    st.warning(f"No se pudo estructurar el análisis de: {uploaded_files[i].name}. La IA respondió: {analysis[:100]}...")
-                    continue
-                
-                progress_bar.progress((i + 1) / len(uploaded_files))
-        
-        status_text.text("Escaneo completado.")
-        
-        if results:
-            df = pd.DataFrame(results).sort_values(by="PUNTAJE", ascending=False)
-            
-            # Gráfica Horizontal arreglada
-            st.markdown("#### 📊 RANKING DE TALENTO")
-            fig = px.bar(df.head(15), x='PUNTAJE', y='NOMBRE', orientation='h',
-                         color='PUNTAJE', color_continuous_scale=['#003300', '#00FF00'], # Gradiente neón
-                         template="plotly_dark", title="TOP CANDIDATOS")
-            fig.update_layout(yaxis={'autorange': "reversed"}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig, use_container_width=True)
+                res = f.result()
+                if res: resultados.append(res)
+                barra.progress((i + 1) / len(archivos))
 
-            # Tabla de datos
-            st.markdown("#### 📄 DETALLE COMPLETO")
+        if resultados:
+            df = pd.DataFrame(resultados).sort_values(by="PUNTAJE", ascending=False)
             st.dataframe(df, use_container_width=True)
 
-            # --- ARREGLO DE EXCEL DEFINITIVO (COLUMNAS ANCHAS Y VERDES) ---
+            # --- EXCEL CON FORMATO ZYNTH (NOMBRE, CORREO, TELÉFONO) ---
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='ZYNTH_Nexus_Data')
+                df.to_excel(writer, index=False, sheet_name='ZYNTH_Nexus')
                 workbook = writer.book
-                worksheet = writer.sheets['ZYNTH_Nexus_Data']
+                worksheet = writer.sheets['ZYNTH_Nexus']
                 
-                # Formato Premium para los encabezados (Verde Neón con Bordes)
-                header_format = workbook.add_format({
-                    'bold': True,
-                    'bg_color': '#00FF00', # Verde Neón Brillante
-                    'font_color': '#000000', # Texto Negro para contraste
-                    'border': 1,
-                    'align': 'center',
-                    'font_name': 'Calibri',
-                    'font_size': 12
-                })
+                # Encabezado Verde Brillante (Igual a tu imagen)
+                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#00FF00', 'border': 1, 'align': 'center'})
+                data_fmt = workbook.add_format({'valign': 'top'})
                 
-                # Formato para el texto de los motivos (con ajuste de línea)
-                motivo_format = workbook.add_format({
-                    'text_wrap': True,
-                    'valign': 'top',
-                    'font_name': 'Calibri'
-                })
+                # Escribir encabezados con formato y ajustar anchos de columna
+                columnas = {
+                    "NOMBRE": 30, "TELEFONO": 20, "EMAIL": 30, 
+                    "PUNTAJE": 12, "VEREDICTO": 20, "MOTIVO": 60
+                }
                 
-                # Formato para el resto de datos
-                data_format = workbook.add_format({
-                    'valign': 'top',
-                    'font_name': 'Calibri'
-                })
-
-                # Aplicar formatos y ajustar anchos
-                for col_num, value in enumerate(df.columns.values):
-                    # Forzar el formato del encabezado
-                    worksheet.write(0, col_num, value, header_format)
-                    
-                    # Ajuste de ancho masivo por columna
-                    if value == "NOMBRE": worksheet.set_column(col_num, col_num, 30, data_format)
-                    elif value == "PUNTAJE": worksheet.set_column(col_num, col_num, 10, data_format)
-                    elif value == "VEREDICTO": worksheet.set_column(col_num, col_num, 20, data_format)
-                    elif value == "MOTIVO": worksheet.set_column(col_num, col_num, 60, motivo_format) # Ancho masivo
-                    elif value == "EMAIL": worksheet.set_column(col_num, col_num, 30, data_format)
-                    else: worksheet.set_column(col_num, col_num, 20, data_format)
+                for i, (col_name, width) in enumerate(columnas.items()):
+                    worksheet.write(0, i, col_name, header_fmt)
+                    worksheet.set_column(i, i, width, data_fmt)
             
-            st.divider()
-            st.download_button("📥 DESCARGAR REPORTE PREMIUM", output.getvalue(), "ZYNTH_Nexus_Report.xlsx", mime="application/vnd.ms-excel")
-
-        else:
-            st.info("No se encontraron resultados válidos en los PDFs.")
-
-    elif analizar_btn:
-        st.warning("⚠️ Asegúrate de escribir qué perfil buscas y cargar al menos un PDF.")
-    else:
-        st.markdown("<br><br><br><h3 style='text-align:center; color:#333;'>Carga la configuración y presiona 'INICIAR ESCANEO' para activar Nexus Talent Processor.</h3>", unsafe_allow_html=True)
+            st.download_button("📥 DESCARGAR REPORTE CONTACTOS", output.getvalue(), "ZYNTH_Talento_Contactos.xlsx")
