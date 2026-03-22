@@ -225,7 +225,7 @@ with col_display:
         else:
             st.info("No se encontraron resultados válidos en los PDFs.")
 
-    elif analiz_btn:
+    elif analizr_btn:
         st.warning("⚠️ Asegúrate de escribir qué perfil buscas y cargar al menos un PDF.")
     else:
         st.markdown("<br><br><br><h3 style='text-align:center; color:#444 !important;'>Carga la configuración y presiona 'INICIAR ESCANEO' para activar Nexus Talent Processor.</h3>", unsafe_allow_html=True)
