@@ -10,9 +10,9 @@ import stripe
 stripe.api_key = st.secrets["STRIPE_API_KEY"]
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- IDs DE PRECIOS ---
-ID_BUSINESS = "price_1TDs0FDumVuheYnZt2zgHmcW"
-ID_STARTER = "price_1TDryXDumVuheYnZysomqD7R"
+# --- IDs DE PRECIOS REALES (LIVE) ---
+ID_BUSINESS_ELITE = "price_1TDsW5Ra9HsPj8S8DjjHLUDV" # 500 CVs
+ID_BUSINESS_STARTER = "price_1TDsXsRa9HsPj8S83TKH7aNS" # 200 CVs
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="ZYNTH Enterprise IA", page_icon="💎", layout="wide")
@@ -20,13 +20,15 @@ st.set_page_config(page_title="ZYNTH Enterprise IA", page_icon="💎", layout="w
 # --- ESTILO CSS PROFESIONAL ---
 st.markdown("""
 <style>
-    .stButton>button { width: 100%; border-radius: 20px; font-weight: bold; }
+    .stApp { background-color: #050505; color: white; }
+    .stButton>button { width: 100%; border-radius: 20px; font-weight: bold; background-color: #00FF00; color: black; }
     .plan-card {
-        border: 1px solid #444;
+        border: 2px solid #00FF00;
         border-radius: 15px;
-        padding: 20px;
-        background-color: #111;
-        box-shadow: 0px 4px 10px rgba(0,0,0,0.3);
+        padding: 25px;
+        background-color: #0e1117;
+        box-shadow: 0px 0px 15px rgba(0, 255, 0, 0.2);
+        margin-bottom: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -42,117 +44,92 @@ def crear_pago(price_id):
             payment_method_types=['card'],
             line_items=[{'price': price_id, 'quantity': 1}],
             mode='payment',
-            success_url='https://zynthia-bpxt95pcezahkpuhzgjes.streamlit.app/?pago=exitoso',
-            cancel_url='https://zynthia-bpxt95pcezahkpuhzgjes.streamlit.app/?pago=cancelado',
+            success_url=f'https://{st.secrets["APP_URL"]}/?pago=exitoso&id={price_id}',
+            cancel_url=f'https://{st.secrets["APP_URL"]}/?pago=cancelado',
         )
         return session.url
     except Exception as e:
-        st.error(f"Error de conexión con Stripe: {e}")
+        st.error(f"Error de Stripe: {e}")
         return None
 
 # --- VERIFICAR RESULTADO DEL PAGO ---
-query_params = st.query_params
-if query_params.get("pago") == "exitoso":
+qp = st.query_params
+if qp.get("pago") == "exitoso":
     st.balloons()
-    st.success("💎 ¡PAGO CONFIRMADO! Tus créditos han sido activados.")
-    # Sumamos 500 por defecto si detectamos éxito (puedes ajustar según el precio)
-    st.session_state.creditos += 100 
+    pid = qp.get("id")
+    if pid == ID_BUSINESS_ELITE:
+        st.session_state.creditos += 500
+        st.success("💎 NIVEL ELITE ACTIVADO: +500 Créditos")
+    elif pid == ID_BUSINESS_STARTER:
+        st.session_state.creditos += 200
+        st.success("🚀 NIVEL STARTER ACTIVADO: +200 Créditos")
     st.query_params.clear()
 
 # --- LÓGICA DE PROCESAMIENTO IA ---
 def procesar_cv_ia(file, perfil_busqueda):
     try:
-        # Leer PDF
         pdf_data = file.read()
         doc = fitz.open(stream=pdf_data, filetype="pdf")
-        texto = ""
-        for page in doc:
-            texto += page.get_text()
-        texto = texto[:7000] # Límite para no saturar la IA
+        texto = "".join([page.get_text() for page in doc])[:7000]
         
-        prompt = f"Analiza este CV para la vacante: {perfil_busqueda}. Responde estrictamente en este formato: Nombre | Teléfono | Correo | Puntaje (1-10) | Veredicto (Contratar/Rechazar) | Motivo corto. CV: {texto}"
+        prompt = f"Analiza este CV para la vacante: {perfil_busqueda}. Responde estrictamente: Nombre | Teléfono | Correo | Puntaje (1-10) | Veredicto | Motivo corto. CV: {texto}"
         
         res = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}]
         )
-        
         r = res.choices[0].message.content.split(" | ")
-        return {
-            "NOMBRE": r[0], "TELÉFONO": r[1], "CORREO": r[2],
-            "PUNTAJE": r[3], "VEREDICTO": r[4], "MOTIVO": r[5]
-        }
-    except Exception as e:
-        return {"NOMBRE": f"Error: {file.name}", "MOTIVO": str(e)}
+        return {"NOMBRE": r[0], "TELÉFONO": r[1], "CORREO": r[2], "PUNTAJE": r[3], "VEREDICTO": r[4], "MOTIVO": r[5]}
+    except:
+        return None
 
-# --- INTERFAZ PRINCIPAL ---
+# --- INTERFAZ ---
 st.title("💎 ZYNTH ENTERPRISE IA")
-st.sidebar.metric("Saldo de Escaneos", f"{st.session_state.creditos} CVs")
+st.sidebar.metric("Créditos Disponibles", f"{st.session_state.creditos} CVs")
 
-# Pantalla de Compra si no hay créditos
 if st.session_state.creditos <= 0:
-    st.markdown("### ⚡ NO TIENES CRÉDITOS ACTIVOS")
-    st.write("Selecciona un plan para desbloquear el poder de la IA en tus contrataciones.")
+    st.markdown("### ⚡ ACCESO RESTRINGIDO: SELECCIONA TU PLAN")
+    c1, c2 = st.columns(2)
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        with st.container():
-            st.markdown('<div class="plan-card">', unsafe_allow_html=True)
-            st.subheader("🚀 STARTER")
-            st.write("### $499 MXN")
-            st.write("- **100** Escaneos de CV")
-            st.write("- Extracción de contacto completa")
-            st.write("- IA Adaptativa Standard")
-            if st.button("ADQUIRIR STARTER"):
-                url = crear_pago(ID_STARTER)
-                if url:
-                    st.link_button("Ir a pagar 💳", url)
-            st.markdown('</div>', unsafe_allow_html=True)
+    with c1:
+        st.markdown('<div class="plan-card">', unsafe_allow_html=True)
+        st.subheader("🚀 BUSINESS STARTER")
+        st.write("## $499 MXN")
+        st.write("- **200** Escaneos de CV")
+        st.write("- IA Adaptativa")
+        if st.button("ADQUIRIR STARTER"):
+            url = crear_pago(ID_BUSINESS_STARTER)
+            if url: st.link_button("Confirmar Pago 💳", url)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with col2:
-        with st.container():
-            st.markdown('<div class="plan-card" style="border-color: #00e5ff;">', unsafe_allow_html=True)
-            st.subheader("💎 BUSINESS")
-            st.write("### $3,500 MXN")
-            st.write("- **500** Escaneos Premium")
-            st.write("- Procesamiento Masivo Ultra-rápido")
-            st.write("- Análisis de Perfil Elite")
-            if st.button("ADQUIRIR BUSINESS"):
-                url = crear_pago(ID_BUSINESS)
-                if url:
-                    st.link_button("Ir a pagar 💳", url)
-            st.markdown('</div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown('<div class="plan-card" style="border-color: #00e5ff;">', unsafe_allow_html=True)
+        st.subheader("💎 BUSINESS ELITE")
+        st.write("## $3,500 MXN")
+        st.write("- **500** Escaneos Premium")
+        st.write("- Procesamiento Masivo")
+        if st.button("ADQUIRIR ELITE"):
+            url = crear_pago(ID_BUSINESS_ELITE)
+            if url: st.link_button("Confirmar Pago 💳", url)
+        st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-# --- ÁREA DE TRABAJO (Solo si hay créditos) ---
-st.write("---")
-perfil = st.text_area("🎯 Describe el perfil que buscas (ej: Desarrollador Python o Chef parrillero):")
-archivos = st.file_uploader("📂 Sube los currículums (PDF)", accept_multiple_files=True, type=["pdf"])
+# --- TRABAJO ---
+perfil = st.text_area("🎯 Perfil buscado:")
+archivos = st.file_uploader("📂 Sube PDFs", accept_multiple_files=True, type=["pdf"])
 
-if st.button("🚀 INICIAR ESCANEO MASIVO"):
-    if archivos and perfil:
-        if len(archivos) <= st.session_state.creditos:
-            resultados = []
-            barra = st.progress(0)
-            status = st.empty()
-            
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                futuros = [executor.submit(procesar_cv_ia, f, perfil) for f in archivos]
-                for i, f in enumerate(futuros):
-                    status.text(f"Procesando archivo {i+1} de {len(archivos)}...")
-                    analisis = f.result() # LÍNEA 131 ARREGLADA
-                    if analisis:
-                        resultados.append(analisis)
-                        st.session_state.creditos -= 1
-                    barra.progress((i + 1) / len(archivos))
-            
-            status.success("✅ Escaneo completado.")
-            df = pd.DataFrame(resultados)
-            st.dataframe(df, use_container_width=True)
-            
-            # Botón de descarga
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar Reporte Excel/CSV", csv, "reporte_zynth.csv", "text/csv")
-        else:
-            st.error(f"Necesitas {len(archivos)} créditos, pero solo tienes {st.session_state.creditos}.")
+if st.button("🚀 INICIAR ESCANEO"):
+    if archivos and perfil and len(archivos) <= st.session_state.creditos:
+        resultados = []
+        barra = st.progress(0)
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futuros = [ex.submit(procesar_cv_ia, f, perfil) for f in archivos]
+            for i, f in enumerate(futuros):
+                res = f.result()
+                if res:
+                    resultados.append(res)
+                    st.session_state.creditos -= 1
+                barra.progress((i + 1) / len(archivos))
+        st.dataframe(pd.DataFrame(resultados), use_container_width=True)
+    else:
+        st.error("Error: Revisa tus créditos o archivos.")
