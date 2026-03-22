@@ -7,20 +7,21 @@ from concurrent.futures import ThreadPoolExecutor
 import stripe
 
 # --- CONFIGURACIÓN DE APIS ---
-# ASEGÚRATE DE USAR sk_test_... EN TUS SECRETS PARA LA COMPRA FAKE
+# CRÍTICO: Usa sk_test_... en tus Secrets para que reconozca los IDs de prueba
 stripe.api_key = st.secrets["STRIPE_API_KEY"]
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- IDs DE PRECIOS DE PRUEBA (ACTUALIZADOS) ---
-ID_BUSINESS_ELITE = "price_1TDs0FDumVuheYnZt2zgHmcW" # El de $3,999 fake
-ID_BUSINESS_STARTER = "price_1TDryXDumVuheYnZysomqD7R" # El de $2,199 fake
+# --- IDs DE PRECIOS DE PRUEBA ---
+# Sustituye estos con los que me pasaste (asegúrate que sean los de Test Mode)
+ID_BUSINESS_ELITE = "price_1TDs0FDumVuheYnZt2zgHmcW" 
+ID_BUSINESS_STARTER = "price_1TDryXDumVuheYnZysomqD7R" 
 
-# URL de retorno configurada en Secrets
+# URL de retorno (Configurada en tus Secrets)
 APP_URL = st.secrets.get("APP_URL", "zynthia-bpxt95pcezahkpuhzgjes.streamlit.app")
 
 st.set_page_config(page_title="ZYNTH Enterprise IA", page_icon="💎", layout="wide")
 
-# --- DISEÑO NEÓN PROFESIONAL ---
+# --- DISEÑO NEÓN ---
 st.markdown("""
 <style>
     .stApp { background-color: #000000; color: white; }
@@ -62,14 +63,14 @@ if qp.get("pago") == "exitoso":
     pid = qp.get("id")
     if pid == ID_BUSINESS_ELITE: st.session_state.creditos += 500
     elif pid == ID_BUSINESS_STARTER: st.session_state.creditos += 200
-    st.success("✅ COMPRA DE PRUEBA EXITOSA: CRÉDITOS ACTIVADOS")
+    st.success("✅ COMPRA DE PRUEBA EXITOSA")
     st.query_params.clear()
 
 # --- INTERFAZ ---
 st.title("💎 ZYNTH ENTERPRISE IA")
 
 if st.session_state.creditos <= 0:
-    st.subheader("⚡ ACCESO RESTRINGIDO: SELECCIONA TU PLAN")
+    st.subheader("⚡ SELECCIONA TU PLAN DE PRUEBA")
     col1, col2 = st.columns(2)
     
     with col1:
@@ -77,27 +78,25 @@ if st.session_state.creditos <= 0:
         <div class="main-card starter-card">
             <h2 style="color: #00FF00;">🚀 BUSINESS STARTER</h2>
             <h1 style="color: white;">$2,199 MXN</h1>
-            <p style="font-size: 18px;">• 200 Escaneos de CV<br>• IA Adaptativa Standard</p>
+            <p>• 200 Escaneos de CV</p>
         </div>
         """, unsafe_allow_html=True)
         if st.button("ADQUIRIR STARTER", key="btn_s"):
             url = crear_pago(ID_BUSINESS_STARTER)
-            if url: st.link_button("Ir a pagar (Modo Prueba) 💳", url, use_container_width=True)
+            if url: st.link_button("Pagar con Tarjeta Fake 💳", url, use_container_width=True)
 
     with col2:
         st.markdown(f"""
         <div class="main-card elite-card">
             <h2 style="color: #00e5ff;">💎 BUSINESS ELITE</h2>
             <h1 style="color: white;">$3,999 MXN</h1>
-            <p style="font-size: 18px;">• 500 Escaneos Premium<br>• Procesamiento Masivo Elite</p>
+            <p>• 500 Escaneos Premium</p>
         </div>
         """, unsafe_allow_html=True)
         if st.button("ADQUIRIR ELITE", key="btn_e"):
             url = crear_pago(ID_BUSINESS_ELITE)
-            if url: st.link_button("Ir a pagar (Modo Prueba) 💳", url, use_container_width=True)
+            if url: st.link_button("Pagar con Tarjeta Fake 💳", url, use_container_width=True)
     st.stop()
 
-# --- PANEL DE TRABAJO ---
-st.sidebar.metric("Saldo actual", f"{st.session_state.creditos} CVs")
-st.write("---")
-# Aquí sigue tu lógica de procesamiento...
+st.sidebar.metric("Saldo", f"{st.session_state.creditos} CVs")
+st.write("### 📂 ¡Ya puedes subir tus archivos!")
