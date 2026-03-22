@@ -1,5 +1,6 @@
 streamlit
+pandas
 openai
 pymupdf
-pandas
 xlsxwriter
+plotly
