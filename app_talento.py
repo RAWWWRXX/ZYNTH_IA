@@ -17,18 +17,23 @@ ID_BUSINESS_STARTER = "price_1TDsXsRa9HsPj8S83TKH7aNS" # 200 CVs
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="ZYNTH Enterprise IA", page_icon="💎", layout="wide")
 
-# --- ESTILO CSS PROFESIONAL ---
+# --- ESTILO CSS PARA FONDO NEGRO Y BOTONES ---
 st.markdown("""
 <style>
-    .stApp { background-color: #050505; color: white; }
-    .stButton>button { width: 100%; border-radius: 20px; font-weight: bold; background-color: #00FF00; color: black; }
-    .plan-card {
-        border: 2px solid #00FF00;
+    .stApp { background-color: #000000; color: white; }
+    div.stButton > button:first-child {
+        background-color: #00FF00;
+        color: black;
+        border-radius: 10px;
+        font-weight: bold;
+        border: none;
+    }
+    .plan-box {
         border-radius: 15px;
         padding: 25px;
         background-color: #0e1117;
-        box-shadow: 0px 0px 15px rgba(0, 255, 0, 0.2);
-        margin-bottom: 20px;
+        margin-bottom: 10px;
+        text-align: center;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -71,13 +76,8 @@ def procesar_cv_ia(file, perfil_busqueda):
         pdf_data = file.read()
         doc = fitz.open(stream=pdf_data, filetype="pdf")
         texto = "".join([page.get_text() for page in doc])[:7000]
-        
         prompt = f"Analiza este CV para la vacante: {perfil_busqueda}. Responde estrictamente: Nombre | Teléfono | Correo | Puntaje (1-10) | Veredicto | Motivo corto. CV: {texto}"
-        
-        res = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
+        res = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}])
         r = res.choices[0].message.content.split(" | ")
         return {"NOMBRE": r[0], "TELÉFONO": r[1], "CORREO": r[2], "PUNTAJE": r[3], "VEREDICTO": r[4], "MOTIVO": r[5]}
     except:
@@ -85,38 +85,42 @@ def procesar_cv_ia(file, perfil_busqueda):
 
 # --- INTERFAZ ---
 st.title("💎 ZYNTH ENTERPRISE IA")
-st.sidebar.metric("Créditos Disponibles", f"{st.session_state.creditos} CVs")
+st.sidebar.metric("Saldo actual", f"{st.session_state.creditos} CVs")
 
 if st.session_state.creditos <= 0:
     st.markdown("### ⚡ ACCESO RESTRINGIDO: SELECCIONA TU PLAN")
-    c1, c2 = st.columns(2)
     
-    with c1:
-        st.markdown('<div class="plan-card">', unsafe_allow_html=True)
-        st.subheader("🚀 BUSINESS STARTER")
-        st.write("## $499 MXN")
-        st.write("- **200** Escaneos de CV")
-        st.write("- IA Adaptativa")
-        if st.button("ADQUIRIR STARTER"):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        <div class="plan-box" style="border: 2px solid #00FF00;">
+            <h3 style="color: #00FF00; margin: 0;">🚀 BUSINESS STARTER</h3>
+            <h2 style="color: white; margin: 10px 0;">$499 MXN</h2>
+            <p style="color: #bbb;">• 200 Escaneos de CV<br>• IA Adaptativa Standard</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("ADQUIRIR STARTER", use_container_width=True):
             url = crear_pago(ID_BUSINESS_STARTER)
             if url: st.link_button("Confirmar Pago 💳", url)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    with c2:
-        st.markdown('<div class="plan-card" style="border-color: #00e5ff;">', unsafe_allow_html=True)
-        st.subheader("💎 BUSINESS ELITE")
-        st.write("## $3,500 MXN")
-        st.write("- **500** Escaneos Premium")
-        st.write("- Procesamiento Masivo")
-        if st.button("ADQUIRIR ELITE"):
+    with col2:
+        st.markdown("""
+        <div class="plan-box" style="border: 2px solid #00e5ff;">
+            <h3 style="color: #00e5ff; margin: 0;">💎 BUSINESS ELITE</h3>
+            <h2 style="color: white; margin: 10px 0;">$3,500 MXN</h2>
+            <p style="color: #bbb;">• 500 Escaneos Premium<br>• Procesamiento Masivo Elite</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("ADQUIRIR ELITE", use_container_width=True):
             url = crear_pago(ID_BUSINESS_ELITE)
             if url: st.link_button("Confirmar Pago 💳", url)
-        st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-# --- TRABAJO ---
-perfil = st.text_area("🎯 Perfil buscado:")
-archivos = st.file_uploader("📂 Sube PDFs", accept_multiple_files=True, type=["pdf"])
+# --- ÁREA DE TRABAJO ---
+st.write("---")
+perfil = st.text_area("🎯 Perfil buscado (ej: Gerente de Ventas):")
+archivos = st.file_uploader("📂 Sube los currículums (PDF)", accept_multiple_files=True, type=["pdf"])
 
 if st.button("🚀 INICIAR ESCANEO"):
     if archivos and perfil and len(archivos) <= st.session_state.creditos:
@@ -132,4 +136,4 @@ if st.button("🚀 INICIAR ESCANEO"):
                 barra.progress((i + 1) / len(archivos))
         st.dataframe(pd.DataFrame(resultados), use_container_width=True)
     else:
-        st.error("Error: Revisa tus créditos o archivos.")
+        st.error("Revisa tus créditos o archivos subidos.")
