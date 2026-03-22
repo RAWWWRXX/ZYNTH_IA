@@ -128,4 +128,94 @@ with col_display:
             
             for i, f in enumerate(futuros):
                 status_text.text(f"Procesando: {uploaded_files[i].name}...")
-                analysis =
+                analysis = f.result()
+                
+                try:
+                    parts = analysis.split(" | ")
+                    nombre = parts[0].split(": ")[1]
+                    puntaje = int(''.join(filter(str.isdigit, parts[1].split(": ")[1])))
+                    
+                    results.append({
+                        "NOMBRE": nombre,
+                        "PUNTAJE": puntaje,
+                        "VEREDICTO": parts[2].split(": ")[1],
+                        "MOTIVO": parts[3].split(": ")[1],
+                        "EMAIL": parts[4].split(": ")[1]
+                    })
+                except:
+                    st.warning(f"No se pudo estructurar el análisis de: {uploaded_files[i].name}. La IA respondió: {analysis[:100]}...")
+                    continue
+                
+                progress_bar.progress((i + 1) / len(uploaded_files))
+        
+        status_text.text("Escaneo completado.")
+        
+        if results:
+            df = pd.DataFrame(results).sort_values(by="PUNTAJE", ascending=False)
+            
+            # Gráfica Horizontal arreglada
+            st.markdown("#### 📊 RANKING DE TALENTO")
+            fig = px.bar(df.head(15), x='PUNTAJE', y='NOMBRE', orientation='h',
+                         color='PUNTAJE', color_continuous_scale=['#003300', '#00FF00'], # Gradiente neón
+                         template="plotly_dark", title="TOP CANDIDATOS")
+            fig.update_layout(yaxis={'autorange': "reversed"}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Tabla de datos
+            st.markdown("#### 📄 DETALLE COMPLETO")
+            st.dataframe(df, use_container_width=True)
+
+            # --- ARREGLO DE EXCEL DEFINITIVO (COLUMNAS ANCHAS Y VERDES) ---
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False, sheet_name='ZYNTH_Nexus_Data')
+                workbook = writer.book
+                worksheet = writer.sheets['ZYNTH_Nexus_Data']
+                
+                # Formato Premium para los encabezados (Verde Neón con Bordes)
+                header_format = workbook.add_format({
+                    'bold': True,
+                    'bg_color': '#00FF00', # Verde Neón Brillante
+                    'font_color': '#000000', # Texto Negro para contraste
+                    'border': 1,
+                    'align': 'center',
+                    'font_name': 'Calibri',
+                    'font_size': 12
+                })
+                
+                # Formato para el texto de los motivos (con ajuste de línea)
+                motivo_format = workbook.add_format({
+                    'text_wrap': True,
+                    'valign': 'top',
+                    'font_name': 'Calibri'
+                })
+                
+                # Formato para el resto de datos
+                data_format = workbook.add_format({
+                    'valign': 'top',
+                    'font_name': 'Calibri'
+                })
+
+                # Aplicar formatos y ajustar anchos
+                for col_num, value in enumerate(df.columns.values):
+                    # Forzar el formato del encabezado
+                    worksheet.write(0, col_num, value, header_format)
+                    
+                    # Ajuste de ancho masivo por columna
+                    if value == "NOMBRE": worksheet.set_column(col_num, col_num, 30, data_format)
+                    elif value == "PUNTAJE": worksheet.set_column(col_num, col_num, 10, data_format)
+                    elif value == "VEREDICTO": worksheet.set_column(col_num, col_num, 20, data_format)
+                    elif value == "MOTIVO": worksheet.set_column(col_num, col_num, 60, motivo_format) # Ancho masivo
+                    elif value == "EMAIL": worksheet.set_column(col_num, col_num, 30, data_format)
+                    else: worksheet.set_column(col_num, col_num, 20, data_format)
+            
+            st.divider()
+            st.download_button("📥 DESCARGAR REPORTE PREMIUM", output.getvalue(), "ZYNTH_Nexus_Report.xlsx", mime="application/vnd.ms-excel")
+
+        else:
+            st.info("No se encontraron resultados válidos en los PDFs.")
+
+    elif analizar_btn:
+        st.warning("⚠️ Asegúrate de escribir qué perfil buscas y cargar al menos un PDF.")
+    else:
+        st.markdown("<br><br><br><h3 style='text-align:center; color:#333;'>Carga la configuración y presiona 'INICIAR ESCANEO' para activar Nexus Talent Processor.</h3>", unsafe_allow_html=True)
