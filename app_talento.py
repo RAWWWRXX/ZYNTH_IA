@@ -3,135 +3,63 @@ import pandas as pd
 from openai import OpenAI
 import fitz  # PyMuPDF
 from io import BytesIO
-import plotly.express as px  # Para las gráficas profesionales
+import plotly.express as px
 
-# --- CONFIGURACIÓN DE PÁGINA ---
+# --- CONFIGURACIÓN ---
 st.set_page_config(page_title="ZYNTH Enterprise IA", page_icon="💎", layout="wide")
 
-# --- ESTILO NEÓN ZYNTH v2.0 ---
-st.markdown("""
-    <style>
-    .main { background-color: #0E1117; color: #00FF00; }
-    .stButton>button { 
-        background-color: #00FF00; color: black; border-radius: 5px; 
-        font-weight: bold; width: 100%; border: none; transition: 0.3s;
-    }
-    .stButton>button:hover { background-color: #00CC00; transform: scale(1.02); }
-    .stTextInput>div>div>input { background-color: #1A1C24; color: white; border: 1px solid #333; }
-    h1 { color: #00FF00 !important; font-family: 'Orbitron', sans-serif; letter-spacing: 5px; text-align: center; }
-    h3 { color: #888 !important; text-align: center; }
-    .stProgress > div > div > div > div { background-color: #00FF00; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- HEADER DE MARCA ---
-st.markdown("<h1>ZYNTH ENTERPRISE</h1>", unsafe_allow_html=True)
-st.markdown("<h3>NEXUS TALENT PROCESSOR • AI EDITION</h3>", unsafe_allow_html=True)
-st.divider()
+# Estilo Neón
+st.markdown("<style>.main { background-color: #0E1117; color: #00FF00; }</style>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #00FF00;'>ZYNTH ENTERPRISE</h1>", unsafe_allow_html=True)
 
 # --- SEGURIDAD ---
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+if "auth" not in st.session_state:
+    st.session_state.auth = False
 
-if not st.session_state.authenticated:
-    col1, col2, col3 = st.columns([1,2,1])
-    with col2:
-        password = st.text_input("SISTEMA ENCRIPTADO - INGRESE ACCESS KEY:", type="password")
-        if password == "ZYNTH2026":
-            st.session_state.authenticated = True
-            st.rerun()
-        else:
-            st.info("Esperando credenciales de administrador...")
-            st.stop()
+if not st.session_state.auth:
+    pwd = st.text_input("PASSWORD:", type="password")
+    if pwd == "ZYNTH2026":
+        st.session_state.auth = True
+        st.rerun()
+    st.stop()
 
-# --- CONFIGURACIÓN DE IA ---
+# --- LÓGICA ---
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-def extract_text_from_pdf(pdf_file):
-    doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
-    return "".join([page.get_text() for page in doc])
-
-def analyze_cv(text, user_requirements):
-    prompt = f"""
-    Eres el motor de IA de ZYNTH Enterprise. Analiza este CV basándote en estos REQUISITOS DEL CLIENTE: "{user_requirements}".
-    Extrae:
-    1. Nombre del candidato.
-    2. Puntaje (1-100) según qué tanto cumple con los requisitos.
-    3. Correo.
-    4. Teléfono.
-    5. Análisis: Una frase técnica del perfil.
-    6. Veredicto: (CONTRATAR, ENTREVISTAR o RECHAZAR).
-    7. Motivo: Justificación breve.
-
-    CV: {text}
-    Responde en este formato:
-    Nombre: [N] | Puntaje: [P] | Correo: [C] | Telefono: [T] | Analisis: [A] | Veredicto: [V] | Motivo: [M]
-    """
-    response = client.chat.completions.create(
+def procesar_cv(file, reqs):
+    doc = fitz.open(stream=file.read(), filetype="pdf")
+    text = "".join([page.get_text() for page in doc])
+    
+    prompt = f"Analiza este CV: {text[:4000]}. Requisitos: {reqs}. Responde solo: Nombre: [N] | Puntaje: [0-100] | Veredicto: [V] | Motivo: [M]"
+    
+    resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
     )
-    return response.choices[0].message.content
+    return resp.choices[0].message.content
 
-# --- PANEL DE CONTROL ---
-col_left, col_right = st.columns([1, 2])
+# --- INTERFAZ ---
+reqs = st.text_input("¿Qué buscas?", "Ingeniero con ganas de trabajar")
+files = st.file_uploader("Subir PDFs", accept_multiple_files=True, type=['pdf'])
 
-with col_left:
-    st.markdown("#### ⚙️ CONFIGURACIÓN")
-    reqs = st.text_area("¿Qué perfil buscas hoy?", placeholder="Ej: Ingeniero de Software con experiencia en Python y bots...")
-    uploaded_files = st.file_uploader("CARGAR CVS (PDF)", accept_multiple_files=True, type=['pdf'])
-
-with col_right:
-    if uploaded_files and reqs:
-        if st.button("🚀 INICIAR ESCANEO ZYNTH"):
-            results = []
-            progress_bar = st.progress(0)
-            
-            for i, file in enumerate(uploaded_files):
-                text = extract_text_from_pdf(file)
-                analysis = analyze_cv(text, reqs)
-                parts = analysis.split(" | ")
-                
-                try:
-                    res_dict = {
-                        "NOMBRE": parts[0].split(": ")[1],
-                        "PUNTAJE": int(parts[1].split(": ")[1]),
-                        "VEREDICTO": parts[5].split(": ")[1],
-                        "MOTIVO": parts[6].split(": ")[1],
-                        "CORREO": parts[2].split(": ")[1],
-                        "TELÉFONO": parts[3].split(": ")[1],
-                        "ANÁLISIS": parts[4].split(": ")[1],
-                        "ARCHIVO": file.name
-                    }
-                    results.append(res_dict)
-                except:
-                    continue
-                progress_bar.progress((i + 1) / len(uploaded_files))
-
-            df = pd.DataFrame(results)
-            
-            # --- VISUALIZACIÓN DE DATOS ---
-            st.markdown("#### 📊 RANKING DE TALENTO")
-            df_sorted = df.sort_values(by="PUNTAJE", ascending=False)
-            fig = px.bar(df_sorted.head(5), x='NOMBRE', y='PUNTAJE', 
-                         color='PUNTAJE', color_continuous_scale='Greens',
-                         template="plotly_dark", title="TOP 5 CANDIDATOS")
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.dataframe(df_sorted)
-
-            # --- EXCEL PREMIUM ---
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='ZYNTH_DATA')
-                workbook, worksheet = writer.book, writer.sheets['ZYNTH_DATA']
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#000000', 'font_color': '#00FF00', 'border': 1})
-                cell_fmt = workbook.add_format({'border': 1})
-                for i, col in enumerate(df.columns):
-                    worksheet.set_column(i, i, max(df[col].astype(str).map(len).max(), len(col)) + 5, cell_fmt)
-                    worksheet.write(0, i, col, header_fmt)
-            
-            st.download_button("📥 DESCARGAR REPORTE ZYNTH", output.getvalue(), "Reporte_ZYNTH.xlsx")
-
-    else:
-        st.info("Esperando archivos y descripción del puesto...")
+if files and st.button("ANALIZAR"):
+    data = []
+    for f in files:
+        res = procesar_cv(f, reqs)
+        p = res.split(" | ")
+        data.append({
+            "NOMBRE": p[0].split(": ")[1],
+            "PUNTAJE": int(p[1].split(": ")[1]),
+            "VEREDICTO": p[2].split(": ")[1],
+            "MOTIVO": p[3].split(": ")[1]
+        })
+    
+    df = pd.DataFrame(data)
+    st.plotly_chart(px.bar(df, x='NOMBRE', y='PUNTAJE', color='PUNTAJE', template="plotly_dark"))
+    st.dataframe(df)
+    
+    # Excel
+    out = BytesIO()
+    with pd.ExcelWriter(out, engine='xlsxwriter') as w:
+        df.to_excel(w, index=False)
+    st.download_button("Descargar Excel", out.getvalue(), "ZYNTH_Report.xlsx")
