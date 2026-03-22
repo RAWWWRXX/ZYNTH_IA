@@ -4,101 +4,96 @@ from openai import OpenAI
 import fitz 
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
+import stripe
 
-# --- CONFIGURACIÓN ZYNTH ---
-st.set_page_config(page_title="ZYNTH Enterprise IA", page_icon="💎", layout="wide")
-
-# --- LOGIN SEGURO ---
-if "autenticado" not in st.session_state:
-    st.session_state.autenticado = False
-
-if not st.session_state.autenticado:
-    st.markdown("<h1 style='text-align:center; color:#00FF00; font-family:Orbitron;'>ZYNTH ACCESS</h1>", unsafe_allow_html=True)
-    clave = st.text_input("PASSWORD:", type="password")
-    if clave == "ZYNTH2026":
-        st.session_state.autenticado = True
-        st.rerun()
-    st.stop()
-
-# --- MOTOR DE INTELIGENCIA ADAPTATIVA ---
+# --- CONFIGURACIÓN DE APIS ---
+# Asegúrate de tener estas llaves en los "Secrets" de Streamlit
+stripe.api_key = st.secrets["STRIPE_API_KEY"]
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-def procesar_cv_adaptativo(file, industria_reqs):
+# --- IDs DE PRECIOS QUE PASASTE ---
+ID_BUSINESS = "price_1TDs0FDumVuheYnZt2zgHmcW" # El de $3,500
+ID_STARTER = "price_1TDryXDumVuheYnZysomqD7R"
+
+# --- INICIALIZAR ESTADO DE CRÉDITOS ---
+if "creditos" not in st.session_state:
+    st.session_state.creditos = 0
+
+# --- FUNCIÓN PARA COBRAR ---
+def crear_pago(price_id):
+    session = stripe.checkout.Session.create(
+        payment_method_types=['card'],
+        line_items=[{'price': price_id, 'quantity': 1}],
+        mode='payment', # Cambia a 'subscription' si en Stripe lo pusiste como recurrente
+        success_url='https://tu-app.streamlit.app/?pago=exitoso',
+        cancel_url='https://tu-app.streamlit.app/?pago=cancelado',
+    )
+    return session.url
+
+# --- VERIFICACIÓN AUTOMÁTICA DE PAGO ---
+if st.query_params.get("pago") == "exitoso":
+    # Aquí sumamos los créditos según lo que compraron (puedes ajustar la lógica)
+    st.session_state.creditos += 500 
+    st.success("💎 CRÉDITOS ZYNTH ACTIVADOS: +500")
+    st.query_params.clear()
+
+# --- LÓGICA DE PROCESAMIENTO (LA QUE TENÍA ERROR) ---
+def procesar_cv_ia(file, perfil):
     try:
         doc = fitz.open(stream=file.read(), filetype="pdf")
-        texto_cv = " ".join([p.get_text() for p in doc])[:8000]
+        texto = " ".join([p.get_text() for p in doc])[:8000]
         
-        # Este prompt hace que la IA se comporte como experto en la industria que el usuario pida
-        prompt = f"""
-        Actúa como un reclutador experto en la siguiente industria/perfil: {industria_reqs}
-        Analiza el CV adjunto y extrae los datos de contacto.
-        
-        RESPONDE ÚNICAMENTE ASÍ:
-        Nombre: [N] | Teléfono: [T] | Correo: [C] | Puntaje: [0-100] | Veredicto: [V] | Motivo: [M]
-        
-        CV: {texto_cv}
-        """
+        prompt = f"Analiza este CV para la vacante: {perfil}. Responde: Nombre | Teléfono | Correo | Puntaje | Veredicto | Motivo. CV: {texto}"
         
         res = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
+            messages=[{"role": "user", "content": prompt}]
         )
-        
+        # Aquí es donde se limpia y estructura la respuesta
         r = res.choices[0].message.content.split(" | ")
         return {
-            "NOMBRE": r[0].split(": ")[1],
-            "TELÉFONO": r[1].split(": ")[1],
-            "CORREO": r[2].split(": ")[1],
-            "PUNTAJE": int(''.join(filter(str.isdigit, r[3]))),
-            "VEREDICTO": r[4].split(": ")[1],
-            "MOTIVO": r[5].split(": ")[1]
+            "NOMBRE": r[0], "TELÉFONO": r[1], "CORREO": r[2],
+            "PUNTAJE": r[3], "VEREDICTO": r[4], "MOTIVO": r[5]
         }
-    except: return None
+    except:
+        return None
 
-# --- INTERFAZ ---
-st.markdown("<h1 style='text-align:center; color:#00FF00;'>ZYNTH ENTERPRISE</h1>", unsafe_allow_html=True)
-col1, col2 = st.columns([1, 2])
+# --- INTERFAZ DE USUARIO ---
+st.title("💎 ZYNTH ENTERPRISE")
+st.sidebar.metric("Saldo actual", f"{st.session_state.creditos} CVs")
 
-with col1:
-    st.info("💡 Consejo: Describe bien el negocio (comida, ropa, tech) para que la IA filtre mejor.")
-    perfil = st.text_area("Descripción de la vacante e industria:", height=200)
-    archivos = st.file_uploader("Subir base de datos (PDFs)", accept_multiple_files=True)
-    btn = st.button("🚀 INICIAR ESCANEO MULTI-INDUSTRIA")
+if st.session_state.creditos <= 0:
+    st.warning("⚠️ No tienes créditos. Selecciona un plan para continuar:")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Comprar Starter ($)"):
+            st.markdown(f"[Pagar aquí]({crear_pago(ID_STARTER)})")
+    with c2:
+        if st.button("Comprar Business ($$$)"):
+            st.markdown(f"[Pagar aquí]({crear_pago(ID_BUSINESS)})")
+    st.stop()
 
-with col2:
-    if btn and archivos and perfil:
-        resultados = []
-        barra = st.progress(0)
-        with ThreadPoolExecutor(max_workers=10) as exe:
-            futuros = [exe.submit(procesar_cv_adaptativo, f, perfil) for f in archivos]
-            for i, f in enumerate(futuros):
-                res = f.result()
-                if res: resultados.append(res)
-                barra.progress((i + 1) / len(archivos))
-        
-        if resultados:
-            df = pd.DataFrame(resultados).sort_values("PUNTAJE", ascending=False)
-            # Orden para el Excel solicitado
-            df = df[["NOMBRE", "TELÉFONO", "CORREO", "PUNTAJE", "VEREDICTO", "MOTIVO"]]
-            st.dataframe(df, use_container_width=True)
+# --- ÁREA DE CARGA ---
+perfil = st.text_area("Describe qué buscas (ej: Parrillero Cumbres o Vendedora Boutique):")
+archivos = st.file_uploader("Sube los PDFs", accept_multiple_files=True)
 
-            # --- EXCEL CON FORMATO ZYNTH ---
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='ZYNTH_Nexus')
-                wb, ws = writer.book, writer.sheets['ZYNTH_Nexus']
-                
-                # Celdas verdes y anchas
-                fmt_head = wb.add_format({'bold':True, 'bg_color':'#00FF00', 'border':1})
-                fmt_txt = wb.add_format({'text_wrap': True, 'valign': 'top'})
-                
-                ws.set_column('A:A', 30, fmt_txt) # Nombre
-                ws.set_column('B:C', 25, fmt_txt) # Tel y Correo
-                ws.set_column('D:E', 15, fmt_txt) # Score y Ver
-                ws.set_column('F:F', 60, fmt_txt) # Motivo
-                
-                for i, col in enumerate(df.columns):
-                    ws.write(0, i, col, fmt_head)
-
-            st.download_button("📥 DESCARGAR BASE DE DATOS", output.getvalue(), "ZYNTH_Report.xlsx")
+if st.button("🚀 INICIAR ESCANEO"):
+    if archivos and perfil:
+        if len(archivos) <= st.session_state.creditos:
+            resultados = []
+            barra = st.progress(0)
+            
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futuros = [executor.submit(procesar_cv_ia, f, perfil) for f in archivos]
+                for i, f in enumerate(futuros):
+                    # ESTA ES LA LÍNEA 131 ARREGLADA:
+                    analisis = f.result() 
+                    if analisis:
+                        resultados.append(analisis)
+                        st.session_state.creditos -= 1
+                    barra.progress((i + 1) / len(archivos))
+            
+            df = pd.DataFrame(resultados)
+            st.dataframe(df)
+        else:
+            st.error("No tienes suficientes créditos para esta cantidad de archivos.")
