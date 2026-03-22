@@ -1,120 +1,135 @@
 import streamlit as st
-import fitz
-from openai import OpenAI
 import pandas as pd
-import io
-import re
-import time 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from openai import OpenAI
+import fitz  # PyMuPDF
+from io import BytesIO
 
-# --- ESTILO NEÓN GAMER / PREMIUM ---
-st.set_page_config(page_title="ZYNTH Enterprise", page_icon="💎", layout="wide")
+# Configuración de página estilo "Dark Mode" Premium
+st.set_page_config(page_title="ZYNTH Enterprise IA", page_icon="💎", layout="wide")
 
+# Estilo CSS Personalizado (Neon ZYNTH Style)
 st.markdown("""
     <style>
-    .stApp { background-color: #0e1117; color: white; }
-    .stButton>button { 
-        background-color: #00ffcc; color: black; 
-        border-radius: 8px; border: none; font-weight: bold;
-        transition: 0.3s; width: 100%;
-    }
-    .stButton>button:hover { background-color: #00cca3; transform: scale(1.02); }
-    .stTextInput>div>div>input { background-color: #1a1c23; color: #00ffcc; border: 1px solid #333; }
-    .stProgress > div > div > div > div { background-color: #00ffcc; }
-    h1, h2, h3 { color: #00ffcc; text-transform: uppercase; }
+    .main { background-color: #0E1117; color: #00FF00; }
+    .stButton>button { background-color: #00FF00; color: black; border-radius: 10px; font-weight: bold; }
+    .stTextInput>div>div>input { background-color: #1A1C24; color: white; border: 1px solid #00FF00; }
+    h1, h2, h3 { color: #00FF00 !important; font-family: 'Courier New', monospace; }
     </style>
     """, unsafe_allow_html=True)
 
+st.title("💎 ZYNTH ENTERPRISE IA")
+st.subheader("High-Performance Talent Processor v1.0")
+
 # --- SEGURIDAD ---
-if "password_correct" not in st.session_state:
-    st.session_state["password_correct"] = False
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
 
-def check_password():
-    if not st.session_state["password_correct"]:
-        with st.container():
-            st.title("🔒 ZYNTH PRIVATE ACCESS")
-            pw = st.text_input("PASSWORD MAESTRA:", type="password")
-            if st.button("DESBLOQUEAR SISTEMA"):
-                if pw == "ZYNTH2026":
-                    st.session_state["password_correct"] = True
-                    st.rerun()
-                else:
-                    st.error("❌ ACCESO DENEGADO")
-        return False
-    return True
+if not st.session_state.authenticated:
+    password = st.text_input("ENTER ACCESS KEY:", type="password")
+    if password == "ZYNTH2026":
+        st.session_state.authenticated = True
+        st.rerun()
+    else:
+        st.warning("SYSTEM LOCKED. PLEASE ENTER CREDENTIALS.")
+        st.stop()
 
-if check_password():
-    # CONFIGURACIÓN DE API
-    client = OpenAI(api_key="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")
+# --- CONFIGURACIÓN DE IA ---
+# Toma la clave desde los Secrets de Streamlit que configuramos
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-    st.title("⚡ ZYNTH ENTERPRISE IA")
-    st.write("### Sistema de Procesamiento de Talento de Alto Nivel")
+def extract_text_from_pdf(pdf_file):
+    doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
+    text = ""
+    for page in doc:
+        text += page.get_text()
+    return text
 
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        perfil = st.text_area("🎯 PERFIL OBJETIVO:", "Ej: Ingeniero de Software SR...", height=150)
-        hilos = st.slider("POTENCIA (HILOS SIMULTÁNEOS):", 1, 15, 2)
-        st.caption("Recomendado: 2-4 para estabilidad máxima.")
-    with col2:
-        uploaded_files = st.file_uploader("📂 CARGAR CVs EN PDF:", type="pdf", accept_multiple_files=True)
+def analyze_cv(text):
+    prompt = f"""
+    Eres un experto en Reclutamiento de IT. Analiza el siguiente CV y extrae:
+    1. Nombre del candidato.
+    2. Un puntaje de 1 a 100 basado en su experiencia.
+    3. Correo electrónico.
+    4. Teléfono.
+    5. Un breve análisis de 1 frase.
+    6. Veredicto: (CONTRATAR, ENTREVISTAR o RECHAZAR).
+    7. Motivo: Por qué diste ese veredicto.
 
-    def process_cv(file, p_texto):
-        try:
-            with fitz.open(stream=file.read(), filetype="pdf") as doc:
-                texto = " ".join([pag.get_text() for pag in doc[:2]])[:3000]
-            
-            prompt = f"Analiza para: {p_texto}. Responde: NOMBRE: [N] | CORREO: [E] | TEL: [T] | PUNTAJE: [0-100] | ANALISIS: [30 palabras] | VIRTUD: [V]"
-            
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": f"{prompt}\n\nTexto: {texto}"}],
-                temperature=0
-            )
-            res = response.choices[0].message.content
-            
-            def find_v(p, t):
-                match = re.search(p, t, re.IGNORECASE)
-                return match.group(1).strip() if match else "N/A"
+    CV: {text}
+    
+    Responde ÚNICAMENTE en este formato exacto:
+    Nombre: [Nombre] | Puntaje: [0-100] | Correo: [Email] | Telefono: [Tel] | Analisis: [Texto] | Veredicto: [Veredicto] | Motivo: [Texto]
+    """
+    
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message.content
 
-            return {
-                "NOMBRE": find_v(r'NOMBRE:\s*(.*?)(?:\||$)', res),
-                "PUNTAJE": int(re.search(r'PUNTAJE:\s*(\d+)', res).group(1)) if re.search(r'PUNTAJE:\s*(\d+)', res) else 0,
-                "CORREO": find_v(r'CORREO:\s*(.*?)(?:\||$)', res),
-                "TELÉFONO": find_v(r'TEL:\s*(.*?)(?:\||$)', res),
-                "ANÁLISIS": find_v(r'ANALISIS:\s*(.*?)(?:\||$)', res),
-                "ARCHIVO": file.name
-            }
-        except: return None
+# --- INTERFAZ DE CARGA ---
+uploaded_files = st.file_uploader("Arrastra los CVs de los candidatos (PDF)", accept_multiple_files=True, type=['pdf'])
 
-    if st.button("🚀 INICIAR PROCESAMIENTO MASIVO") and uploaded_files:
-        resultados = []
-        barra = st.progress(0)
-        status = st.empty()
+if uploaded_files:
+    if st.button("🚀 INICIAR PROCESAMIENTO MASIVO"):
+        results = []
+        progress_bar = st.progress(0)
         
-        with ThreadPoolExecutor(max_workers=hilos) as executor:
-            futures = {executor.submit(process_cv, f, perfil): f for f in uploaded_files}
-            for i, future in enumerate(as_completed(futures)):
-                r = future.result()
-                if r: resultados.append(r)
-                barra.progress((i + 1) / len(uploaded_files))
-                status.markdown(f"**⚡ PROCESADOS:** {i+1} / {len(uploaded_files)}")
+        for i, file in enumerate(uploaded_files):
+            with st.spinner(f"Procesando: {file.name}..."):
+                text = extract_text_from_pdf(file)
+                analysis = analyze_cv(text)
+                
+                # Limpiar la respuesta para el Excel
+                parts = analysis.split(" | ")
+                res_dict = {
+                    "NOMBRE": parts[0].split(": ")[1],
+                    "PUNTAJE": parts[1].split(": ")[1],
+                    "VEREDICTO": parts[5].split(": ")[1],
+                    "MOTIVO": parts[6].split(": ")[1],
+                    "CORREO": parts[2].split(": ")[1],
+                    "TELÉFONO": parts[3].split(": ")[1],
+                    "ANÁLISIS": parts[4].split(": ")[1],
+                    "ARCHIVO": file.name
+                }
+                results.append(res_dict)
+                progress_bar.progress((i + 1) / len(uploaded_files))
 
-        if resultados:
-            st.success("✅ ANÁLISIS COMPLETADO")
-            df = pd.DataFrame(resultados).sort_values(by="PUNTAJE", ascending=False)
+        df = pd.DataFrame(results)
+        st.success("✅ PROCESAMIENTO COMPLETADO")
+        st.dataframe(df)
+
+        # --- GENERACIÓN DE EXCEL PREMIUM ---
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='ZYNTH_DATA')
             
-            # --- BUSCADOR EN VIVO ---
-            st.markdown("### 🔍 BUSCADOR DE TALENTO")
-            query = st.text_input("Filtrar candidatos por cualquier dato:")
-            df_view = df[df.apply(lambda row: row.astype(str).str.contains(query, case=False).any(), axis=1)] if query else df
+            workbook  = writer.book
+            worksheet = writer.sheets['ZYNTH_DATA']
             
-            st.dataframe(df_view, use_container_width=True)
+            # Formatos de diseño
+            header_format = workbook.add_format({
+                'bold': True, 
+                'bg_color': '#000000', 
+                'font_color': '#00FF00',
+                'border': 1
+            })
+            
+            cell_format = workbook.add_format({'border': 1})
 
-            # --- DESCARGA ---
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='ZYNTH_DATA')
-            st.download_button("📥 DESCARGAR REPORTE EXCEL", output.getvalue(), "ZYNTH_REPORT.xlsx")
+            # Auto-ajuste de columnas para que no se vea amontonado
+            for i, col in enumerate(df.columns):
+                # Calculamos el largo máximo del contenido en esa columna
+                max_len = max(df[col].astype(str).map(len).max(), len(col)) + 5
+                worksheet.set_column(i, i, max_len, cell_format)
+                # Aplicamos el estilo neón al encabezado
+                worksheet.write(0, i, col, header_format)
 
-st.sidebar.markdown("---")
-st.sidebar.write("Developed by **ZYNTH MX**")
+        data = output.getvalue()
+        
+        st.download_button(
+            label="📥 DESCARGAR REPORTE PREMIUM EXCEL",
+            data=data,
+            file_name="Reporte_ZYNTH_IA.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
