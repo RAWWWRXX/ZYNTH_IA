@@ -6,10 +6,10 @@ from io import BytesIO
 import plotly.express as px
 from concurrent.futures import ThreadPoolExecutor
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="ZYNTH Enterprise IA", page_icon="💎", layout="wide")
 
-# --- CSS ESTILO ZYNTH ---
+# --- CSS ESTILO ZYNTH NEÓN ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Roboto:wght@300;400&display=swap');
@@ -23,7 +23,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOGIN ---
+# --- SISTEMA DE CONTRASEÑA ---
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
@@ -37,79 +37,106 @@ if not st.session_state.autenticado:
 
 # --- APP PRINCIPAL ---
 st.markdown("<h1>ZYNTH ENTERPRISE</h1>", unsafe_allow_html=True)
-
-if "OPENAI_API_KEY" not in st.secrets:
-    st.error("Falta la API KEY en Secrets.")
-    st.stop()
+st.markdown("<p style='text-align:center; color:#555;'>NEXUS TALENT SCANNER v6.0</p>", unsafe_allow_html=True)
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 def procesar_cv(file, reqs):
     try:
+        # Abrir PDF y extraer texto
         doc = fitz.open(stream=file.read(), filetype="pdf")
-        texto = " ".join([p.get_text() for p in doc])[:7000]
-        prompt = f"CV: {texto}\nBusco: {reqs}\nResponde EXACTO: Nombre: [N] | Tel: [T] | Email: [E] | Score: [S] | Veredicto: [V] | Motivo: [M]"
+        texto = " ".join([p.get_text() for p in doc])[:8000]
+        
+        # Prompt agresivo para extraer datos de contacto
+        prompt = f"""
+        Analiza este CV basándote en estos requisitos: {reqs}
+        Extrae NOMBRE, TELÉFONO y CORREO de forma obligatoria.
+        
+        RESPONDE ÚNICAMENTE EN ESTE FORMATO:
+        Nombre: [N] | Teléfono: [T] | Correo: [C] | Puntaje: [0-100] | Veredicto: [V] | Motivo: [M]
+        
+        CV: {texto}
+        """
         
         envio = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0
         )
+        
         r = envio.choices[0].message.content.split(" | ")
         return {
             "NOMBRE": r[0].split(": ")[1],
-            "TELEFONO": r[1].split(": ")[1],
+            "TELÉFONO": r[1].split(": ")[1],
             "CORREO": r[2].split(": ")[1],
             "PUNTAJE": int(''.join(filter(str.isdigit, r[3]))),
             "VEREDICTO": r[4].split(": ")[1],
             "MOTIVO": r[5].split(": ")[1]
         }
-    except: return None
+    except Exception as e:
+        return None
 
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    perfil = st.text_area("Perfil buscado:", height=150)
+    st.markdown("#### ⚙️ CONFIG")
+    perfil = st.text_area("Perfil buscado:", placeholder="Ej: Ingeniero Software...", height=150)
     archivos = st.file_uploader("PDFs", accept_multiple_files=True, type=['pdf'])
     boton_escanear = st.button("🚀 INICIAR ESCANEO ZYNTH")
 
 with col2:
     if boton_escanear:
         if not archivos or not perfil:
-            st.warning("Faltan archivos o perfil.")
+            st.warning("⚠️ Sube los archivos y define el perfil.")
         else:
             resultados = []
             barra = st.progress(0)
+            status = st.empty()
+            
+            # MULTITHREADING PARA VELOCIDAD (1,000 CVs)
             with ThreadPoolExecutor(max_workers=10) as exe:
                 futuros = [exe.submit(procesar_cv, f, perfil) for f in archivos]
                 for i, f in enumerate(futuros):
                     res = f.result()
                     if res: resultados.append(res)
                     barra.progress((i + 1) / len(archivos))
-            
+                    status.text(f"Procesando: {i+1} / {len(archivos)}")
+
             if resultados:
                 df = pd.DataFrame(resultados).sort_values("PUNTAJE", ascending=False)
-                # Reordenar columnas para el Excel
-                df = df[["NOMBRE", "TELEFONO", "CORREO", "PUNTAJE", "VEREDICTO", "MOTIVO"]]
+                
+                # REORDENAR COLUMNAS PARA EL EXCEL (NOMBRE, TELÉFONO, CORREO PRIMERO)
+                columnas_orden = ["NOMBRE", "TELÉFONO", "CORREO", "PUNTAJE", "VEREDICTO", "MOTIVO"]
+                df = df[columnas_orden]
                 
                 st.dataframe(df, use_container_width=True)
 
-                # --- EXCEL PRO ---
+                # --- EXCEL PROFESIONAL CON FORMATO ---
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df.to_excel(writer, index=False, sheet_name='Data')
-                    wb = writer.book
-                    ws = writer.sheets['Data']
+                    df.to_excel(writer, index=False, sheet_name='Resultados')
+                    workbook = writer.book
+                    worksheet = writer.sheets['Resultados']
                     
-                    # Formato Verde Zynth (como image_b30ec8.png)
-                    head_fmt = wb.add_format({'bold':True,'bg_color':'#00FF00','border':1})
+                    # Formato Verde Neón para encabezados (Igual a tu imagen)
+                    header_fmt = workbook.add_format({
+                        'bold': True, 'bg_color': '#00FF00', 'border': 1, 'align': 'center'
+                    })
                     
-                    # Ajuste de columnas
-                    ws.set_column('A:C', 30) # Nombre, Tel, Correo
-                    ws.set_column('D:E', 15) # Score, Veredicto
-                    ws.set_column('F:F', 60) # Motivo (Súper ancho)
+                    # Formato para el texto (con ajuste de línea para el Motivo)
+                    wrap_fmt = workbook.add_format({'text_wrap': True, 'valign': 'top'})
                     
+                    # Ajustar anchos de columnas
+                    worksheet.set_column('A:A', 35, wrap_fmt) # Nombre
+                    worksheet.set_column('B:B', 20, wrap_fmt) # Teléfono
+                    worksheet.set_column('C:C', 35, wrap_fmt) # Correo
+                    worksheet.set_column('D:D', 10, wrap_fmt) # Puntaje
+                    worksheet.set_column('E:E', 25, wrap_fmt) # Veredicto
+                    worksheet.set_column('F:F', 70, wrap_fmt) # Motivo (Muy ancho)
+                    
+                    # Aplicar formato de encabezado
                     for col_num, value in enumerate(df.columns.values):
-                        ws.write(0, col_num, value, head_fmt)
+                        worksheet.write(0, col_num, value, header_fmt)
 
-                st.download_button("📥 DESCARGAR EXCEL", output.getvalue(), "Reporte_Zynth.xlsx")
+                st.divider()
+                st.download_button("📥 DESCARGAR REPORTE EXCEL (CONTACTOS)", output.getvalue(), "ZYNTH_Talento.xlsx")
