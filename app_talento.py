@@ -4,143 +4,111 @@ from openai import OpenAI
 import fitz  # PyMuPDF
 from io import BytesIO
 import plotly.express as px
+from concurrent.futures import ThreadPoolExecutor # Para velocidad masiva
 
-# --- CONFIGURACIÓN DE PÁGINA (WIDE MODE) ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="ZYNTH Enterprise IA", page_icon="💎", layout="wide")
 
-# --- CSS ULTRA-PREMIUM (ESTILO CYBERPUNK) ---
+# --- CSS ESTILO "ZYNTH NEÓN" ---
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;700&display=swap');
-    
-    .main { background-color: #050505; color: #e0e0e0; font-family: 'Roboto', sans-serif; }
-    
-    h1 { font-family: 'Orbitron', sans-serif; color: #00FF00 !important; text-align: center; text-transform: uppercase; letter-spacing: 4px; text-shadow: 0 0 15px #00FF00; margin-bottom: 0px;}
-    h3 { font-family: 'Roboto', sans-serif; color: #888 !important; text-align: center; font-weight: 300; letter-spacing: 2px; margin-top: 0px; margin-bottom: 30px;}
-    h4 { color: #00FF00 !important; font-family: 'Orbitron', sans-serif; letter-spacing: 2px; border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 20px;}
-
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Roboto:wght@300;400&display=swap');
+    .main { background-color: #050505; color: #00FF00; font-family: 'Roboto', sans-serif; }
+    h1 { font-family: 'Orbitron', sans-serif; color: #00FF00 !important; text-shadow: 0 0 20px #00FF00; text-align: center; }
     .stButton>button { 
-        background: linear-gradient(45deg, #00FF00, #00CC00); color: black; border-radius: 5px; 
-        font-family: 'Orbitron', sans-serif; font-weight: bold; width: 100%; border: none; padding: 12px;
-        transition: 0.3s; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 0 10px rgba(0,255,0,0.5);
+        background: #00FF00; color: black; font-family: 'Orbitron'; width: 100%; 
+        border: none; box-shadow: 0 0 15px #00FF00;
     }
-    .stButton>button:hover { background: linear-gradient(45deg, #00CC00, #00FF00); transform: scale(1.03); box-shadow: 0 0 20px #00FF00; }
-
-    .stTextInput>div>div>input, .stTextArea>div>div>textarea { 
-        background-color: #101010; color: #00FF00; border: 1px solid #333; font-family: 'Roboto', sans-serif; border-radius: 5px;
-    }
-    
-    .stDataFrame { background-color: #101010; border: 1px solid #333; border-radius: 5px; }
-    
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    .stProgress > div > div > div > div { background-color: #00FF00; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- HEADER DE MARCA ---
 st.markdown("<h1>ZYNTH ENTERPRISE</h1>", unsafe_allow_html=True)
-st.markdown("<h3>NEXUS TALENT PROCESSOR // AI EDITION v3.0</h3>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center; color:#888;'>HIGH-SPEED TALENT PROCESSOR v4.0</p>", unsafe_allow_html=True)
 
 # --- SEGURIDAD ---
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+if "auth" not in st.session_state:
+    st.session_state.auth = False
 
-if not st.session_state.authenticated:
-    col1, col2, col3 = st.columns([1,1.5,1])
-    with col2:
-        password = st.text_input("INGRESE ACCESS KEY (ENCRIPTADO):", type="password")
-        if password == "ZYNTH2026":
-            st.session_state.authenticated = True
-            st.rerun()
-        elif password:
-            st.error("KEY INCORRECTA. ACCESO DENEGADO.")
-        st.stop()
+if not st.session_state.auth:
+    pwd = st.text_input("ACCESS KEY:", type="password")
+    if pwd == "ZYNTH2026":
+        st.session_state.auth = True
+        st.rerun()
+    st.stop()
 
-# --- CONFIGURACIÓN DE IA ---
+# --- MOTOR DE IA ---
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-def extract_text_from_pdf(pdf_file):
+def procesar_un_solo_pdf(file, reqs):
+    """Función que procesa un PDF individual para el ThreadPool"""
     try:
-        doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
-        return "".join([page.get_text() for page in doc])[:10000]
+        doc = fitz.open(stream=file.read(), filetype="pdf")
+        text = " ".join([page.get_text() for page in doc])[:8000]
+        
+        prompt = f"Analiza este CV: {text}. Requisitos: {reqs}. Responde solo: Nombre: [N] | Puntaje: [0-100] | Veredicto: [V] | Motivo: [M] | Email: [E]"
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini", # El más rápido y barato para volumen
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+        res = response.choices[0].message.content
+        p = res.split(" | ")
+        return {
+            "NOMBRE": p[0].split(": ")[1],
+            "PUNTAJE": int(''.join(filter(str.isdigit, p[1]))),
+            "VEREDICTO": p[2].split(": ")[1],
+            "MOTIVO": p[3].split(": ")[1],
+            "EMAIL": p[4].split(": ")[1]
+        }
     except:
-        return ""
-
-def analyze_cv(text, user_requirements):
-    prompt = f"""
-    Eres el motor de IA de ZYNTH Enterprise. Analiza este CV basándote en: "{user_requirements}".
-    Extrae la info y asigna puntaje 0-100.
-    
-    RESPONDE EXCLUSIVAMENTE ASÍ:
-    Nombre: [N] | Puntaje: [P] | Veredicto: [V] | Motivo: [M] | Correo: [C] | Telefono: [T]
-    
-    CV: {text}
-    """
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3
-    )
-    return response.choices[0].message.content
+        return None
 
 # --- INTERFAZ ---
-col_config, col_display = st.columns([1, 2.2])
+col1, col2 = st.columns([1, 2])
 
-with col_config:
-    st.markdown("#### ⚙️ CONFIGURACIÓN")
-    reqs = st.text_area("¿Qué perfil buscas?", placeholder="Ej: Ingeniero de Software...", height=150)
-    uploaded_files = st.file_uploader("CARGAR CVS (PDF)", accept_multiple_files=True, type=['pdf'])
-    analizar_btn = st.button("🚀 INICIAR ESCANEO ZYNTH")
+with col1:
+    st.markdown("### ⚙️ FILTRO")
+    reqs = st.text_area("Perfil buscado:", placeholder="Ej: Dev Jr con Python...", height=100)
+    files = st.file_uploader("Subir CVs (Máximo 1000)", accept_multiple_files=True, type=['pdf'])
+    start = st.button("🚀 INICIAR ESCANEO MASIVO")
 
-with col_display:
-    if uploaded_files and reqs and analizar_btn:
+with col2:
+    if files and reqs and start:
         results = []
-        progress_bar = st.progress(0)
+        progress = st.progress(0)
+        status = st.empty()
         
-        for i, file in enumerate(uploaded_files):
-            text = extract_text_from_pdf(file)
-            analysis = analyze_cv(text, reqs)
+        # --- PROCESAMIENTO PARALELO (AQUÍ ESTÁ LA MAGIA) ---
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(procesar_un_solo_pdf, f, reqs) for f in files]
             
-            try:
-                parts = analysis.split(" | ")
-                results.append({
-                    "NOMBRE": parts[0].split(": ")[1],
-                    "PUNTAJE": int(''.join(filter(str.isdigit, parts[1].split(": ")[1]))),
-                    "VEREDICTO": parts[2].split(": ")[1],
-                    "MOTIVO": parts[3].split(": ")[1],
-                    "CORREO": parts[4].split(": ")[1],
-                    "TELÉFONO": parts[5].split(": ")[1]
-                })
-            except:
-                continue
-            progress_bar.progress((i + 1) / len(uploaded_files))
-        
+            for i, future in enumerate(futures):
+                res = future.result()
+                if res: results.append(res)
+                progress.progress((i + 1) / len(files))
+                status.text(f"Procesados: {i+1} de {len(files)}")
+
         if results:
             df = pd.DataFrame(results).sort_values(by="PUNTAJE", ascending=False)
             
-            # Gráfica Horizontal Premium
-            fig = px.bar(df.head(10), x='PUNTAJE', y='NOMBRE', orientation='h',
-                         color='PUNTAJE', color_continuous_scale=['#003300', '#00FF00'],
-                         template="plotly_dark", title="TOP TALENTO")
-            fig.update_layout(yaxis={'autorange': "reversed"}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            # Gráfica Horizontal Limpia
+            fig = px.bar(df.head(20), x='PUNTAJE', y='NOMBRE', orientation='h',
+                         color='PUNTAJE', color_continuous_scale='Greens',
+                         template="plotly_dark", title="TOP 20 CANDIDATOS")
+            fig.update_layout(yaxis={'autorange': "reversed"}, paper_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
             
             st.dataframe(df, use_container_width=True)
 
-            # Excel Premium
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='ZYNTH_DATA')
-                workbook, worksheet = writer.book, writer.sheets['ZYNTH_DATA']
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#000000', 'font_color': '#00FF00', 'border': 1})
+            # Excel de alta calidad
+            out = BytesIO()
+            with pd.ExcelWriter(out, engine='xlsxwriter') as w:
+                df.to_excel(w, index=False, sheet_name='ZYNTH_REPORT')
+                # Auto-ajuste de columnas
+                worksheet = w.sheets['ZYNTH_REPORT']
                 for i, col in enumerate(df.columns):
-                    worksheet.set_column(i, i, 20)
-                    worksheet.write(0, i, col, header_fmt)
+                    worksheet.set_column(i, i, 25)
             
-            st.download_button("📥 DESCARGAR REPORTE EXCEL", output.getvalue(), "ZYNTH_Report.xlsx")
-
-    elif analizar_btn:
-        st.warning("⚠️ Carga archivos y escribe el perfil.")
-    else:
-        st.markdown("<h3 style='color:#444 !important; margin-top:100px;'>Esperando activación de Nexus...</h3>", unsafe_allow_html=True)
+            st.download_button("📥 DESCARGAR EXCEL", out.getvalue(), "ZYNTH_Report.xlsx")
